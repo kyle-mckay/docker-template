@@ -1,0 +1,20 @@
+# Ignore everything
+*
+
+# Allow directories (but ignore their contents)
+!*/
+
+# Track this file
+!.gitignore
+
+# Allow Docker YML files in root
+!compose.yml
+!compose.yaml
+!docker-compose.yml
+!docker-compose.yaml
+
+# Allow Docker YML files in subdirectories
+!*/compose.yml
+!*/compose.yaml
+!*/docker-compose.yml
+!*/docker-compose.yaml
