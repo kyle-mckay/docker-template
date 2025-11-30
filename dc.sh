@@ -3,7 +3,7 @@
 # Usage:
 # bash dc.sh up
 # OR allow script execution: `chmod +x dc.sh`
-# dc.sh up
+# ./dc.sh up
 
 set -euo pipefail
 
