@@ -4,8 +4,9 @@
 # Allow directories (but ignore their contents)
 !*/
 
-# Track this file
+# Track these files in root
 !.gitignore
+!docker-compose.sh
 
 # Allow Docker YML files in root
 !compose.yml
