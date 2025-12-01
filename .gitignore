@@ -1,12 +1,15 @@
 # Ignore everything
 *
 
+# Ignore the templates dir
+.templates/
+
 # Allow directories (but ignore their contents)
 !*/
 
 # Track these files in root
 !.gitignore
-!docker-compose.sh
+!dc.sh
 
 # Allow Docker YML files in root
 !compose.yml
