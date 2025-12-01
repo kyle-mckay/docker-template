@@ -1,11 +1,11 @@
 # Ignore everything
 *
 
-# Ignore the templates dir
-.templates/
-
 # Allow directories (but ignore their contents)
 !*/
+
+# Ignore the templates dir
+.templates/
 
 # Track these files in root
 !.gitignore
