@@ -10,6 +10,7 @@
 # Track these files in root
 !.gitignore
 !dc.sh
+!templates.sh
 
 # Allow Docker YML files in root
 !compose.yml
