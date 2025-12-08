@@ -5,7 +5,7 @@
 # OR allow script execution: `chmod +x dc.sh`
 # ./dc.sh up
 
-set -euo pipefail
+set -uo pipefail
 
 if [[ $# -ne 1 ]]; then
     echo "Usage: $0 {up|down|pull}"
