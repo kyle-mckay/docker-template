@@ -9,7 +9,9 @@
 
 # Track these files in root
 !.gitignore
+!.env.template
 !dc.sh
+!backup.sh
 !get-templates.sh
 
 # Allow Docker YML files in root
