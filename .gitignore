@@ -25,3 +25,6 @@
 !*/compose.yaml
 !*/docker-compose.yml
 !*/docker-compose.yaml
+
+# Ignore default backup repository
+borg-backup/*
