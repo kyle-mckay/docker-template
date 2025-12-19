@@ -23,6 +23,7 @@ BORG_REPO="$SCRIPT_DIR/borg-backup"
 BORG_ENCRYPTION="none"
 BORG_COMPRESSION="lz4"
 BORG_STATS=true
+DC_BATCH_CONTROLLER="$SCRIPT_DIR/dc.sh"
 
 # Load environment variables from .env file if it exists
 
@@ -72,78 +73,114 @@ verify_variable_conflicts() {
         log ERROR "BORG_ENCRYPTION '$BORG_ENCRYPTION' is not a valid option. Use 'none' or 'repokey'."
         exit 1
     else
-        log TRACE "BORG_ENCRYPTION is valid: set to '$BORG_ENCRYPTION'"
         if [[ -z "$BORG_REPO_PASSPHRASE" && "$BORG_ENCRYPTION" == "repokey" ]]; then
             log ERROR "BORG_REPO_PASSPHRASE must be set when using repokey encryption."
             exit 1
         else
             if [[ "$BORG_ENCRYPTION" == "repokey" ]]; then
-                log TRACE "BORG_REPO_PASSPHRASE is set: length ${#BORG_REPO_PASSPHRASE} chars."
+                log DEBUG "BORG_REPO_PASSPHRASE is set: length ${#BORG_REPO_PASSPHRASE} chars."
+            else
+                log DEBUG "BORG_ENCRYPTION PASSED: set to '$BORG_ENCRYPTION'"
             fi
-            log TRACE "BORG_ENCRYPTION PASSED"
         fi
-    fi
-
-
-    if [[ "$BACKUP_MODE" != "local" ]]; then
-        log ERROR "BACKUP_MODE '$BACKUP_MODE' not supported in this script."
-        exit 1
-    else
-        log TRACE "No conflicts with BACKUP_MODE value."
     fi
 
     if [[ "$CHOWN_AFTER" == "true" && ( -z "$OWNER_UID" || -z "$OWNER_GID" ) ]]; then
         log ERROR "CHOWN_AFTER is true but OWNER_UID or OWNER_GID is not set."
         exit 1
     elif [[ "$CHOWN_AFTER" == "true" ]]; then
-        log TRACE "CHOWN_AFTER PASSED: OWNER_UID=${OWNER_UID}, OWNER_GID=${OWNER_GID}"
+        log DEBUG "CHOWN_AFTER PASSED: OWNER_UID=${OWNER_UID}, OWNER_GID=${OWNER_GID}"
     else
-        log TRACE "CHOWN_AFTER PASSED: Enabled: $CHOWN_AFTER"
+        log DEBUG "CHOWN_AFTER PASSED: Enabled: $CHOWN_AFTER"
     fi
 
     if [[ "$PERFORM_URL_HEALTHCHECK" == "true" && -z "$HEALTHCHECK_URL" ]]; then
         log WARN "PERFORM_URL_HEALTHCHECK is true but HEALTHCHECK_URL is not set."
     elif [[ "$PERFORM_URL_HEALTHCHECK" == "true" ]]; then
-        log TRACE "PERFORM_URL_HEALTHCHECK PASSED: Enabled for $HEALTHCHECK_URL"
+        log DEBUG "PERFORM_URL_HEALTHCHECK PASSED: Enabled for $HEALTHCHECK_URL"
     else 
-        log TRACE "PERFORM_URL_HEALTHCHECK PASSED: Enabled: $PERFORM_URL_HEALTHCHECK"
+        log DEBUG "PERFORM_URL_HEALTHCHECK PASSED: Enabled: $PERFORM_URL_HEALTHCHECK"
     fi
 
     if [[ "$LOG_LEVEL" != "TRACE" && "$LOG_LEVEL" != "DEBUG" && "$LOG_LEVEL" != "INFO" && "$LOG_LEVEL" != "WARN" && "$LOG_LEVEL" != "WARNING" && "$LOG_LEVEL" != "ERROR" ]]; then
         log WARN "LOG_LEVEL '$LOG_LEVEL' is not a valid option. Resetting to INFO for this session."
         LOG_LEVEL="INFO"
+    else
+        log DEBUG "LOG_LEVEL PASSED: set to '$LOG_LEVEL'"
     fi
 
-    log TRACE "Variable conflict checks completed."
+    if [[ "$BORG_STATS" != "true" && "$BORG_STATS" != "false" ]]; then
+        log WARN "BORG_STATS '$BORG_STATS' is not a valid option. Use 'true' or 'false'."
+    else
+        log DEBUG "BORG_STATS PASSED: set to '$BORG_STATS'"
+    fi
+
+    if [[ "$BORG_PROGRESS_BAR" != "true" && "$BORG_PROGRESS_BAR" != "false" ]]; then
+        log WARN "BORG_PROGRESS_BAR '$BORG_PROGRESS_BAR' is not a valid option. Use 'true' or 'false'."
+    else
+        log DEBUG "BORG_PROGRESS_BAR PASSED: set to '$BORG_PROGRESS_BAR'"
+    fi
+
+    if [[ "$BORG_LIST" != "true" && "$BORG_LIST" != "false" ]]; then
+        log WARN "BORG_LIST '$BORG_LIST' is not a valid option. Use 'true' or 'false'."
+    else
+        log DEBUG "BORG_LIST PASSED: set to '$BORG_LIST'"
+    fi
+
+    if [[ "$CHOWN_AFTER" != "true" && "$CHOWN_AFTER" != "false" ]]; then
+        log WARN "CHOWN_AFTER '$CHOWN_AFTER' is not a valid option. Use 'true' or 'false'."
+    else
+        log DEBUG "CHOWN_AFTER PASSED: set to '$CHOWN_AFTER'"
+    fi
+
+    if [[ ! -z "$DC_BATCH_CONTROLLER" ]]; then
+        if [[ ! -f "$DC_BATCH_CONTROLLER" ]]; then
+            log ERROR "'docker compose' batch controller not found in $BACKUP_SOURCE"
+            exit 1
+        else
+            log DEBUG "DC_BATCH_CONTROLLER PASSED: set to '$DC_BATCH_CONTROLLER'"
+        fi
+    else
+        log DEBUG "DC_BATCH_CONTROLLER PASSED: Docker compose batch controller not set; will skip batch controller operations."
+    fi
+
+    log DEBUG "Variable conflict checks completed."
 }
 
 verify_required_variables() {
     log TRACE "=======verify_required_variables()======="
     log TRACE "Verifying required environment variables..."
 
+    if [[ "$BACKUP_MODE" != "local" ]]; then
+        log ERROR "BACKUP_MODE '$BACKUP_MODE' not supported in this script."
+        exit 1
+    else
+        log DEBUG "BACKUP_MODE PASSED: set to '$BACKUP_MODE'"
+    fi
+
     if [[ -z "$BACKUP_SOURCE" ]]; then
         log ERROR "BACKUP_SOURCE is not set."
         exit 1
     else
-        log TRACE "BACKUP_SOURCE PASSED: set to '$BACKUP_SOURCE'"
+        log DEBUG "BACKUP_SOURCE PASSED: set to '$BACKUP_SOURCE'"
     fi
 
     if [[ -z "$BORG_REPO" ]]; then
         log ERROR "BORG_REPO is not set."
         exit 1
     else
-        log TRACE "BORG_REPO PASSED: set to '$BORG_REPO'"
+        log DEBUG "BORG_REPO PASSED: set to '$BORG_REPO'"
     fi
 
     if [[ "$BORG_COMPRESSION" != "lz4" && "$BORG_COMPRESSION" != "zstd,[1-9]" && "$BORG_COMPRESSION" != "zlib,[0-9]" && "$BORG_COMPRESSION" != "none" ]]; then
         log WARN "BORG_COMPRESSION '$BORG_COMPRESSION' is not a valid option. Setting to 'lz4' for this session."
         BORG_COMPRESSION="lz4"
     else
-        log TRACE "BORG_COMPRESSION PASSED: set to '$BORG_COMPRESSION'"
+        log DEBUG "BORG_COMPRESSION PASSED: set to '$BORG_COMPRESSION'"
     fi
 
 
-    log TRACE "All required environment variables verified."
+    log DEBUG "All required environment variables verified."
 
 }
 
@@ -216,7 +253,6 @@ log() {
 
 borg_init(){
     log TRACE "=======borg_init()======="
-    log INFO "Initializing Borg backup environment..."
     # Initialize the repository
     if [[ "$BACKUP_MODE" == "local" ]]; then
         # Create parent dir if it doesnt exist
@@ -225,16 +261,14 @@ borg_init(){
             log INFO "Creating borg repo"
             log DEBUG "borg init args: --encryption=${BORG_ENCRYPTION} repo=${BORG_REPO}"
             borg init --encryption="$BORG_ENCRYPTION" "$BORG_REPO"
+            chown_repo
             log INFO "Borg repo created"
+        elif [[ -d "$BORG_REPO" ]]; then
+            log INFO "Borg repo already exists"
+        else
+            log ERROR "Borg repo '$BORG_REPO' is not a directory."
+            exit 1
         fi
-        if [[ "$CHOWN_AFTER" == "true" ]]; then
-            log DEBUG "Setting ownership ${OWNER_UID}:${OWNER_GID} on ${BORG_REPO}"
-            chown -R $OWNER_UID:$OWNER_GID "$BORG_REPO"
-        fi
-    else
-        log ERROR "BACKUP_MODE '$BACKUP_MODE' not implemented in this script."
-        exit 1
-    
     fi
 
     # Trace repository/encryption details (mask sensitive info)
@@ -244,51 +278,64 @@ borg_init(){
 
 makeCopy(){
     log TRACE "=======makeCopy()======="
-    local archiveName=$1  # This will be "Docker-Stack"
+    local archiveName=$1 # name of the backup archive
     local borg_opts=()
 
     # Prepare Borg options
     ## Compression
     if [[ -n "$BORG_COMPRESSION" ]]; then
+        log TRACE "Adding compression option: --compression=$BORG_COMPRESSION"
         borg_opts+=( "--compression" "$BORG_COMPRESSION" )
     fi
 
     ## Exclusions
     for skip in "${EXCLUDE_PATTERNS[@]}"; do
+        log TRACE "Adding exclude pattern: --exclude=sh:$skip"
         borg_opts+=( "--exclude" "sh:$skip" )
     done
 
     ## Stats
     if [[ "$BORG_STATS" == "true" ]]; then
+        log TRACE "Adding stats option: --stats"
         borg_opts+=( "--stats" )
     fi
 
     ## Progress bar
     if [[ "$BORG_PROGRESS_BAR" == "true" ]]; then
+        log TRACE "Adding progress option: --progress"
         borg_opts+=( "--progress" )
     fi
 
     ## List files
     if [[ "$BORG_LIST" == "true" ]]; then
+        log TRACE "Adding list option: --list"
         borg_opts+=( "--list" )
     fi
 
     log INFO "Starting Borg snapshot for $BACKUP_SOURCE"
     log DEBUG "Borg options count: ${#borg_opts[@]}; excludes=${#EXCLUDE_PATTERNS[@]}"
-    log TRACE "Borg opts: ${borg_opts[*]}"
-    # show first few excludes for trace
-    log TRACE "Excludes (sample): ${EXCLUDE_PATTERNS[@]:0:5}"
+    if [[ "$LOG_LEVEL" == "TRACE" ]]; then
+        log TRACE "borg create ${borg_opts[*]} ${BORG_REPO}::${archiveName}-$TIMESTAMP ${BACKUP_SOURCE}"
+    fi
 
     # Execute the backup
-    log TRACE "borg create ${borg_opts[*]} ${BORG_REPO}::${archiveName}-$TIMESTAMP ${BACKUP_SOURCE}"
     start_ts
     borg create "${borg_opts[@]}" "${BORG_REPO}::${archiveName}-$TIMESTAMP" "${BACKUP_SOURCE}"
     local status=$?
     end_ts
     log TRACE "borg create finished exit=${status}, duration=$((end_ts-start_ts))s"
+    
+    chown_repo
+    cleanupOldBackups
 
+    log INFO "Backup complete: ${archiveName}-$TIMESTAMP"
+}
+
+chown_repo(){
+    log TRACE "=======chown_repo()======="
+    log INFO "Setting ownership on borg repo..."
     if [[ "$CHOWN_AFTER" == "true" ]]; then
-            log DEBUG "Chowning borg repo to ${OWNER_UID}:${OWNER_GID}"
+        log DEBUG "Chowning borg repo to ${OWNER_UID}:${OWNER_GID}"
             log TRACE "chown -R $OWNER_UID:$OWNER_GID $BORG_REPO"
             start_ts
             chown -R $OWNER_UID:$OWNER_GID "$BORG_REPO"
@@ -298,11 +345,10 @@ makeCopy(){
                 log ERROR "Failed to chown borg repo with UID=$OWNER_UID GID=$OWNER_GID"
             fi
             log TRACE "chown completed exit=${status}, duration=$((end_ts-start_ts))s"
+    else
+        log DEBUG "CHOWN_AFTER is false; skipping chown"
     fi
-
-    cleanupOldBackups
-
-    log INFO "Backup complete: ${archiveName}-$TIMESTAMP"
+    log TRACE "chown_repo completed"
 }
 
 cleanupOldBackups() {
@@ -317,23 +363,30 @@ cleanupOldBackups() {
     # Crucial: Prune marks data for deletion, Compact actually frees the space
     log TRACE "Starting borg compact: borg compact ${BORG_REPO}"
     borg compact "$BORG_REPO"
-    log TRACE "borg compact completed"
+    log TRACE "cleanupOldBackups completed"
 }
 
 docker_compose() {
     # dc.sh is a shell script to perform `docker-compose [args]` in each child folder
     log TRACE "=======docker_compose()======="
     arg=$1
-    log INFO "Bringing stacks $arg"
-    log TRACE "dc.sh $arg"
+    local dc=$DC_BATCH_CONTROLLER
+
+    if [[ -z "$DC_BATCH_CONTROLLER" ]]; then
+        log TRACE "DC_BATCH_CONTROLLER not set: skipping docker_compose $arg"
+        return
+    fi
+
+    log INFO "Bringing stacks '$arg'"
+    log TRACE "$dc $arg"
 
     start_ts
-    bash "$BACKUP_SOURCE/dc.sh" $arg
+    bash $dc $arg
     local status=$?
     end_ts
 
     log TRACE "dc.sh $arg exit=${status}, duration=$((end_ts-start_ts))"
-    log TRACE "dc.sh $arg completed"
+    log TRACE "docker_compose $arg completed"
 }
 
 start_ts() {
