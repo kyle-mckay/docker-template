@@ -28,3 +28,6 @@
 
 # Ignore default backup repository
 borg-backup/*
+
+# Ignore test stack
+hello-world/*
