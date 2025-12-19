@@ -144,6 +144,26 @@ verify_variable_conflicts() {
         log DEBUG "DC_BATCH_CONTROLLER PASSED: Docker compose batch controller not set; will skip batch controller operations."
     fi
 
+    if [[ "$SAVE_LOGS" != "true" && "$SAVE_LOGS" != "false" ]]; then
+        log WARN "SAVE_LOGS '$SAVE_LOGS' is not a valid option. Use 'true' or 'false'."
+    else
+        log DEBUG "SAVE_LOGS PASSED: set to '$SAVE_LOGS'"
+    fi
+
+    if [[ "$SAVE_LOGS" == "true" ]]; then
+        # Ensure the directory for LOG_PATH exists
+        local log_dir="$(dirname "$LOG_PATH")"
+        if [[ ! -d "$log_dir" ]]; then
+            log WARN "LOG_PATH does not have an existing parent directory. Disabling logging to file."
+            SAVE_LOGS="false"
+        elif [[ -z "$LOG_PATH" ]]; then
+            log WARN "LOG_PATH is not set but SAVE_LOGS is true. Setting to false."
+            SAVE_LOGS="false"
+        else
+            log DEBUG "LOG_PATH PASSED: set to '$LOG_PATH'"
+        fi
+    fi
+
     log DEBUG "Variable conflict checks completed."
 }
 
@@ -248,6 +268,11 @@ log() {
         printf "%b%s[%s] %s%b\n" "$color" "$ts" "$level" "$msg" "$clr_reset" >&2
     else
         printf "%s[%s] %s\n" "$ts" "$level" "$msg" >&2
+    fi
+
+    # Save to file if enabled (clean text only)
+    if [[ "$SAVE_LOGS" == "true" ]]; then
+        printf "%s[%s] %s\n" "$ts" "$level" "$msg" >> "$LOG_PATH"
     fi
 }
 
