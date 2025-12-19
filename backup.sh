@@ -13,17 +13,28 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 #   For a remote repo (ssh) set `BACKUP_TYPE` accordingly and update `DST`.
 
 # Default Configuration
-# You can override these by renaming the `.env` template to `.env` and editing the file
+# You can override these by renaming `.env.template` to `.env` and editing the file
 BACKUP_SOURCE="$SCRIPT_DIR"
 LOG_LEVEL=INFO
 LOG_TIMESTAMP_FORMAT="%F %T"
 LOG_ENABLE_COLORS=true
 BACKUP_MODE="local"
-BORG_REPO="$SCRIPT_DIR/borg-backup"
+BORG_REPO="$SCRIPT_DIR/.borg-backup"
+BORG_ARCHIVE_NAME="Docker-Stack"
 BORG_ENCRYPTION="none"
 BORG_COMPRESSION="lz4"
 BORG_STATS=true
-DC_BATCH_CONTROLLER="$SCRIPT_DIR/dc.sh"
+DC_BATCH_CONTROLLER="$BACKUP_SOURCE/dc.sh"
+SAVE_LOGS=false
+LOG_DIR="$BACKUP_SOURCE"
+LOG_FILE="backup.log"
+CREATE_DIRS=true
+PREFLIGHT_COMPLETE=false
+LOG_BUFFER=()
+
+
+# Timestamp used for archive names. Format: YYYY-MM-DD_HH-MM-SS
+TIMESTAMP=$(date +%F_%H-%M-%S)
 
 # Load environment variables from .env file if it exists
 
@@ -31,17 +42,23 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
     source "$SCRIPT_DIR/.env"
 fi
 
-# Timestamp used for archive names. Format: YYYY-MM-DD_HH-MM-SS
-TIMESTAMP=$(date +%F_%H-%M-%S)
+# Set LOG_PATH based on LOG_DIR and LOG_FILE
+LOG_PATH="$LOG_DIR/$LOG_FILE"
 
+# Set LOG_PATH based on LOG_DIR and LOG_FILE
+LOG_PATH="$LOG_DIR/$LOG_FILE"
+
+PREFLIGHT_COMPLETE=false
 
 #region Functions
 
 #region Pre-flight verifications
 # Performs a selftest of various functions
 preflight() {
-    log TRACE "=======preflight()======="
+    log TRACE "=======start preflight()======="
     log TRACE "Starting selftest..."
+
+    setup_logging
 
     if [[ "$LOG_LEVEL" == "TRACE" ]]; then
         log INFO "Log level set to $LOG_LEVEL; printing test messages at all levels."
@@ -63,10 +80,54 @@ preflight() {
     verify_variable_conflicts
 
     log DEBUG "Selftest Finished."
+    log TRACE "=======end preflight()======="
+}
+
+setup_logging() {
+    log TRACE "=======start setup_logging()======="
+    if [[ "$SAVE_LOGS" == "true" ]]; then
+        if [[ -z "$LOG_DIR" || -z "$LOG_FILE" ]]; then
+            log ERROR "LOG_DIR or LOG_FILE is not set but SAVE_LOGS is true. Setting to false."
+            SAVE_LOGS="false"
+            log WARN "SAVE_LOGS reset to false."
+        elif [[ ! -d "$LOG_DIR" && "$CREATE_DIRS" == true ]]; then
+            log DEBUG "LOG_DIR does not exist. Creating $LOG_DIR."
+            mkdir -p "$LOG_DIR"
+            if [[ $? -ne 0 ]]; then
+                log ERROR "Failed to create LOG_DIR $LOG_DIR"
+                
+            else
+                log DEBUG "LOG_DIR $LOG_DIR created successfully."
+            fi
+        elif [[ ! -d "$LOG_DIR" && "$CREATE_DIRS" == false ]]; then
+            log ERROR "LOG_DIR $LOG_DIR does not exist and CREATE_DIRS is false."
+            SAVE_LOGS="false"
+            log WARN "SAVE_LOGS reset to false."
+        elif [[ -d "$LOG_DIR" ]]; then
+            if [[ ! -w "$LOG_DIR" ]]; then
+                log ERROR "LOG_DIR $LOG_DIR is not writable."
+            fi
+        else
+            log DEBUG "LOG_DIR $LOG_DIR exists and is writable."
+        fi
+
+        # SAVE_LOGS was not reset due to failures above
+        if [[ "$SAVE_LOGS" == "true" ]]; then
+            log DEBUG "LOG_PATH PASSED: set to '$LOG_PATH'"
+        fi
+    else
+        LOG_PATH="/dev/null"
+        log DEBUG "SAVE_LOGS is false; command outputs will not be logged to file."
+    fi
+
+    PREFLIGHT_COMPLETE=true
+    flush_log_buffer
+    log DEBUG "Logging setup completed."
+    log TRACE "=======end setup_logging()======="
 }
 
 verify_variable_conflicts() {
-    log TRACE "=======verify_variable_conflicts()======="
+    log TRACE "=======start verify_variable_conflicts()======="
     log TRACE "Verifying variable conflicts..."
 
     if [[ "$BORG_ENCRYPTION" != "none" && "$BORG_ENCRYPTION" != "repokey" ]]; then
@@ -146,40 +207,39 @@ verify_variable_conflicts() {
 
     if [[ "$SAVE_LOGS" != "true" && "$SAVE_LOGS" != "false" ]]; then
         log WARN "SAVE_LOGS '$SAVE_LOGS' is not a valid option. Use 'true' or 'false'."
+        SAVE_LOGS="false"
+        log WARN "SAVE_LOGS reset to false."
     else
         log DEBUG "SAVE_LOGS PASSED: set to '$SAVE_LOGS'"
     fi
 
-    if [[ "$SAVE_LOGS" == "true" ]]; then
-        # Ensure the directory for LOG_PATH exists
-        local log_dir="$(dirname "$LOG_PATH")"
-        if [[ ! -d "$log_dir" ]]; then
-            log WARN "LOG_PATH does not have an existing parent directory. Disabling logging to file."
-            SAVE_LOGS="false"
-        elif [[ -z "$LOG_PATH" ]]; then
-            log WARN "LOG_PATH is not set but SAVE_LOGS is true. Setting to false."
-            SAVE_LOGS="false"
-        else
-            log DEBUG "LOG_PATH PASSED: set to '$LOG_PATH'"
-        fi
-    fi
-
     log DEBUG "Variable conflict checks completed."
+    log TRACE "=======end verify_variable_conflicts()======="
 }
 
+
 verify_required_variables() {
-    log TRACE "=======verify_required_variables()======="
+    log TRACE "=======start verify_required_variables()======="
     log TRACE "Verifying required environment variables..."
 
     if [[ "$BACKUP_MODE" != "local" ]]; then
         log ERROR "BACKUP_MODE '$BACKUP_MODE' not supported in this script."
         exit 1
-    else
+    elif [[ "$BACKUP_MODE" == "local" ]]; then
         log DEBUG "BACKUP_MODE PASSED: set to '$BACKUP_MODE'"
     fi
 
     if [[ -z "$BACKUP_SOURCE" ]]; then
         log ERROR "BACKUP_SOURCE is not set."
+        exit 1
+    elif [[ ! "$BACKUP_SOURCE" ]]; then
+        log ERROR "BACKUP_SOURCE '$BACKUP_SOURCE' does not exist."
+        exit 1
+    elif [[ ! -d "$BACKUP_SOURCE" ]]; then
+        log ERROR "BACKUP_SOURCE '$BACKUP_SOURCE' is not a directory."
+        exit 1
+    elif [[ ! -r "$BACKUP_SOURCE" ]]; then
+        log ERROR "BACKUP_SOURCE '$BACKUP_SOURCE' is not readable."
         exit 1
     else
         log DEBUG "BACKUP_SOURCE PASSED: set to '$BACKUP_SOURCE'"
@@ -188,7 +248,14 @@ verify_required_variables() {
     if [[ -z "$BORG_REPO" ]]; then
         log ERROR "BORG_REPO is not set."
         exit 1
-    else
+    elif [[ "$BACKUP_MODE" == "local" ]]; then
+        if [[ ! -d "$BORG_REPO" ]]; then
+            log ERROR "Borg repo '$BORG_REPO' does not exist."
+            exit 1
+        elif [[ ! -w "$BORG_REPO" ]]; then
+            log ERROR "Borg repo '$BORG_REPO' is not writable."
+            exit 1
+        fi
         log DEBUG "BORG_REPO PASSED: set to '$BORG_REPO'"
     fi
 
@@ -199,15 +266,27 @@ verify_required_variables() {
         log DEBUG "BORG_COMPRESSION PASSED: set to '$BORG_COMPRESSION'"
     fi
 
+    if [[ -z "$BORG_ARCHIVE_NAME" ]]; then
+        log WARN "BORG_ARCHIVE_NAME is not set. Setting to 'backup' for this session."
+        BORG_ARCHIVE_NAME="backup"
+    else
+        log DEBUG "BORG_ARCHIVE_NAME PASSED: set to '$BORG_ARCHIVE_NAME'"
+    fi
+
 
     log DEBUG "All required environment variables verified."
-
+    log TRACE "=======end verify_required_variables()======="
 }
 
 #endregion Selftests
 
 log() {
     local level="${1:-INFO}"
+    local no_timestamp=false
+    if [[ "$2" == "no_timestamp" ]]; then
+        no_timestamp=true
+        shift
+    fi
     shift || true
     local msg="$*"
 
@@ -259,7 +338,7 @@ log() {
 
     # Timestamp
     local ts=""
-    if [[ -n "$LOG_TIMESTAMP_FORMAT" ]]; then
+    if [[ "$no_timestamp" == "false" && -n "$LOG_TIMESTAMP_FORMAT" ]]; then
         ts="$(date +"$LOG_TIMESTAMP_FORMAT") "
     fi
 
@@ -272,12 +351,16 @@ log() {
 
     # Save to file if enabled (clean text only)
     if [[ "$SAVE_LOGS" == "true" ]]; then
-        printf "%s[%s] %s\n" "$ts" "$level" "$msg" >> "$LOG_PATH"
+        if [[ "$PREFLIGHT_COMPLETE" == "false" ]]; then
+            LOG_BUFFER+=("$ts [$level] $msg")
+        else
+            printf "%s[%s] %s\n" "$ts" "$level" "$msg" >> "$LOG_PATH"
+        fi
     fi
 }
 
 borg_init(){
-    log TRACE "=======borg_init()======="
+    log TRACE "=======start borg_init()======="
     # Initialize the repository
     if [[ "$BACKUP_MODE" == "local" ]]; then
         # Create parent dir if it doesnt exist
@@ -285,7 +368,7 @@ borg_init(){
         if [[ ! -d "$BORG_REPO" ]]; then
             log INFO "Creating borg repo"
             log DEBUG "borg init args: --encryption=${BORG_ENCRYPTION} repo=${BORG_REPO}"
-            borg init --encryption="$BORG_ENCRYPTION" "$BORG_REPO"
+            borg init --encryption="$BORG_ENCRYPTION" "$BORG_REPO" 2>&1 | tee -a "$LOG_PATH"
             chown_repo
             log INFO "Borg repo created"
         elif [[ -d "$BORG_REPO" ]]; then
@@ -298,11 +381,11 @@ borg_init(){
 
     # Trace repository/encryption details (mask sensitive info)
     log TRACE "Borg repo present: $( [[ -d "$BORG_REPO" ]] && echo yes || echo no ), encryption=${BORG_ENCRYPTION}, passphrase_set=$( [[ -n "${BORG_REPO_PASSPHRASE:-}" ]] && echo yes || echo no )"
-
+    log TRACE "=======end borg_init()======="
 }
 
 makeCopy(){
-    log TRACE "=======makeCopy()======="
+    log TRACE "=======start makeCopy()======="
     local archiveName=$1 # name of the backup archive
     local borg_opts=()
 
@@ -345,8 +428,8 @@ makeCopy(){
 
     # Execute the backup
     start_ts
-    borg create "${borg_opts[@]}" "${BORG_REPO}::${archiveName}-$TIMESTAMP" "${BACKUP_SOURCE}"
-    local status=$?
+    borg create "${borg_opts[@]}" "${BORG_REPO}::${archiveName}-$TIMESTAMP" "${BACKUP_SOURCE}" 2>&1 | tee -a "$LOG_PATH"
+    status=$?
     end_ts
     log TRACE "borg create finished exit=${status}, duration=$((end_ts-start_ts))s"
     
@@ -354,10 +437,11 @@ makeCopy(){
     cleanupOldBackups
 
     log INFO "Backup complete: ${archiveName}-$TIMESTAMP"
+    log TRACE "=======end makeCopy()======="
 }
 
 chown_repo(){
-    log TRACE "=======chown_repo()======="
+    log TRACE "=======start chown_repo()======="
     log INFO "Setting ownership on borg repo..."
     if [[ "$CHOWN_AFTER" == "true" ]]; then
         log DEBUG "Chowning borg repo to ${OWNER_UID}:${OWNER_GID}"
@@ -373,27 +457,30 @@ chown_repo(){
     else
         log DEBUG "CHOWN_AFTER is false; skipping chown"
     fi
-    log TRACE "chown_repo completed"
+    log DEBUG "chown_repo completed"
+    log TRACE "=======end chown_repo()======="
 }
 
 cleanupOldBackups() {
-    log TRACE "=======cleanupOldBackups()======="
+    log TRACE "=======start cleanupOldBackups()======="
     log INFO "Pruning old backups..."
     # Keep the last 7 backups, regardless of time
     # run prune with SMART stderr handling (docker/compose/borg emit warnings/status on stderr)
     log TRACE "Starting borg prune: borg prune -v --list --keep-last 7 ${BORG_REPO}"
-    borg prune -v --list --keep-last 7 "$BORG_REPO"
+    borg prune -v --list --keep-last 7 "$BORG_REPO" 2>&1 | tee -a "$LOG_PATH"
     log TRACE "borg prune completed"
     
     # Crucial: Prune marks data for deletion, Compact actually frees the space
     log TRACE "Starting borg compact: borg compact ${BORG_REPO}"
-    borg compact "$BORG_REPO"
-    log TRACE "cleanupOldBackups completed"
+    borg compact "$BORG_REPO" 2>&1 | tee -a "$LOG_PATH"
+
+    log DEBUG "cleanupOldBackups completed"
+    log TRACE "=======end cleanupOldBackups()======="
 }
 
 docker_compose() {
     # dc.sh is a shell script to perform `docker-compose [args]` in each child folder
-    log TRACE "=======docker_compose()======="
+    log TRACE "=======start docker_compose()======="
     arg=$1
     local dc=$DC_BATCH_CONTROLLER
 
@@ -406,12 +493,13 @@ docker_compose() {
     log TRACE "$dc $arg"
 
     start_ts
-    bash $dc $arg
-    local status=$?
+    bash "$dc" "$arg" 2>&1 | tee -a "$LOG_PATH"
+    status=$?
     end_ts
 
     log TRACE "dc.sh $arg exit=${status}, duration=$((end_ts-start_ts))"
     log TRACE "docker_compose $arg completed"
+    log TRACE "=======end docker_compose()======="
 }
 
 start_ts() {
@@ -421,9 +509,24 @@ start_ts() {
 end_ts() {
     end_ts=$(date +%s)
 }
+
+flush_log_buffer() {
+    if [[ "$SAVE_LOGS" == "true" ]]; then
+        for line in "${LOG_BUFFER[@]}"; do
+            echo "$line" >> "$LOG_PATH"
+        done
+        LOG_BUFFER=()
+    fi
+}
+
+
 #endregion Functions
 
 #region Main Script
+log DEBUG "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+log DEBUG "                Starting backup script"
+log DEBUG "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+s_start=$(date +%s)
 
 preflight
 borg_init
@@ -436,12 +539,18 @@ fi
 
 cd "$BACKUP_SOURCE"
 docker_compose "down"
-makeCopy "Docker-Stack"
+makeCopy $BORG_ARCHIVE_NAME
 docker_compose "up"
 
 # ping healthcheck
 if [[ "$PERFORM_URL_HEALTHCHECK" == "true" ]]; then
     curl -s "$HEALTHCHECK_URL" > /dev/null || log WARN "Healthcheck ping failed"
 fi 
+
+s_end=$(date +%s)
+log DEBUG "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+log DEBUG "Backup script completed"
+log TRACE "Script duration: $((s_end-s_start)) seconds"
+log DEBUG "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 
 #endregion Main Script
