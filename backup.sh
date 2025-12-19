@@ -140,6 +140,12 @@ verify_variable_conflicts() {
         else
             if [[ "$BORG_ENCRYPTION" == "repokey" ]]; then
                 log DEBUG "BORG_REPO_PASSPHRASE is set: length ${#BORG_REPO_PASSPHRASE} chars."
+                export BORG_PASSPHRASE="$BORG_REPO_PASSPHRASE"
+                if [[ $? -ne 0 ]]; then
+                    log ERROR "Failed to set BORG_PASSPHRASE"
+                else
+                    log DEBUG "BORG_PASSPHRASE set successfully."
+                fi
             else
                 log DEBUG "BORG_ENCRYPTION PASSED: set to '$BORG_ENCRYPTION'"
             fi
@@ -249,13 +255,6 @@ verify_required_variables() {
         log ERROR "BORG_REPO is not set."
         exit 1
     elif [[ "$BACKUP_MODE" == "local" ]]; then
-        if [[ ! -d "$BORG_REPO" ]]; then
-            log ERROR "Borg repo '$BORG_REPO' does not exist."
-            exit 1
-        elif [[ ! -w "$BORG_REPO" ]]; then
-            log ERROR "Borg repo '$BORG_REPO' is not writable."
-            exit 1
-        fi
         log DEBUG "BORG_REPO PASSED: set to '$BORG_REPO'"
     fi
 
@@ -272,7 +271,6 @@ verify_required_variables() {
     else
         log DEBUG "BORG_ARCHIVE_NAME PASSED: set to '$BORG_ARCHIVE_NAME'"
     fi
-
 
     log DEBUG "All required environment variables verified."
     log TRACE "=======end verify_required_variables()======="
@@ -362,19 +360,21 @@ log() {
 borg_init(){
     log TRACE "=======start borg_init()======="
     # Initialize the repository
+    log INFO "Checking borg repo..."
+
     if [[ "$BACKUP_MODE" == "local" ]]; then
         # Create parent dir if it doesnt exist
-        mkdir -p "$(dirname "$BORG_REPO")"
-        if [[ ! -d "$BORG_REPO" ]]; then
+
+        if [[ -d "$BORG_REPO" ]]; then
+            log INFO "Borg repo already exists"
+        elif [[ ! -e "$BORG_REPO" ]]; then
             log INFO "Creating borg repo"
             log DEBUG "borg init args: --encryption=${BORG_ENCRYPTION} repo=${BORG_REPO}"
             borg init --encryption="$BORG_ENCRYPTION" "$BORG_REPO" 2>&1 | tee -a "$LOG_PATH"
             chown_repo
             log INFO "Borg repo created"
-        elif [[ -d "$BORG_REPO" ]]; then
-            log INFO "Borg repo already exists"
-        else
-            log ERROR "Borg repo '$BORG_REPO' is not a directory."
+        else 
+            log ERROR "Borg repo '$BORG_REPO' exists but not as a directory."
             exit 1
         fi
     fi
