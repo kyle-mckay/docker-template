@@ -461,6 +461,18 @@ chown_repo(){
     log TRACE "=======end chown_repo()======="
 }
 
+chown_logs(){
+    # not logging this function to avoid overwriting log file ownership
+    if [[ "$CHOWN_AFTER" == "true" ]]; then
+        chown -R $OWNER_UID:$OWNER_GID "$LOG_DIR"
+        local status=$?
+        end_ts
+        if [[ $status -ne 0 ]]; then
+            log ERROR "Failed to chown borg repo with UID=$OWNER_UID GID=$OWNER_GID"
+        fi
+    fi
+}
+
 cleanupOldBackups() {
     log TRACE "=======start cleanupOldBackups()======="
     log INFO "Pruning old backups..."
@@ -519,6 +531,47 @@ flush_log_buffer() {
     fi
 }
 
+# Self-update: replace this script with the version from the main branch
+# Usage: backup.sh --update
+if [[ "${1:-}" == "--update" ]]; then
+    UPDATE_URL="https://raw.githubusercontent.com/kyle-mckay/docker-template/refs/heads/main/backup.sh"
+    # Determine the current script path
+    SELF_PATH="${BASH_SOURCE[0]}"
+    if [[ "${SELF_PATH:0:1}" != "/" ]]; then
+        SELF_PATH="$SCRIPT_DIR/$(basename "${SELF_PATH}")"
+    fi
+
+    echo "Updating $SELF_PATH from $UPDATE_URL..."
+
+    tmpfile=$(mktemp /tmp/backup.sh.XXXXXX) || {
+        echo "Failed to create temporary file for update." >&2
+        exit 1
+    }
+
+    if curl -fsSL "$UPDATE_URL" -o "$tmpfile"; then
+        # Basic validation: file should start with a shebang
+        if head -n1 "$tmpfile" | grep -q '^#!'; then
+            chmod +x "$tmpfile" || true
+            if mv "$tmpfile" "$SELF_PATH"; then
+                echo "Update applied to $SELF_PATH"
+                exit 0
+            else
+                echo "Failed to move updated file into place." >&2
+                rm -f "$tmpfile"
+                exit 1
+            fi
+        else
+            echo "Downloaded file looks invalid (missing shebang). Aborting." >&2
+            rm -f "$tmpfile"
+            exit 1
+        fi
+    else
+        echo "Failed to download update from $UPDATE_URL" >&2
+        rm -f "$tmpfile"
+        exit 1
+    fi
+fi
+
 
 #endregion Functions
 
@@ -552,5 +605,9 @@ log DEBUG "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 log DEBUG "Backup script completed"
 log TRACE "Script duration: $((s_end-s_start)) seconds"
 log DEBUG "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+
+if [[ "$CHOWN_AFTER" == "true" ]]; then
+    chown_logs
+fi
 
 #endregion Main Script
