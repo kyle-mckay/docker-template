@@ -9,7 +9,9 @@
 
 # Track these files in root
 !.gitignore
+!.env.template
 !dc.sh
+!backup.sh
 !get-templates.sh
 
 # Allow Docker YML files in root
@@ -23,3 +25,9 @@
 !*/compose.yaml
 !*/docker-compose.yml
 !*/docker-compose.yaml
+
+# Ignore default backup repository
+borg-backup/*
+
+# Ignore test stack
+hello-world/*

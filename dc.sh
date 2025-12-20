@@ -24,6 +24,14 @@ case "$cmd" in
         ;;
 esac
 
+if [[ "$cmd" == "up" ]]; then
+	echo "Starting all services as detached..."
+elif [[ "$cmd" == "down" ]]; then
+	echo "Stopping all services..."
+elif [[ "$cmd" == "pull" ]]; then
+	echo "Pulling latest images for all services..."
+fi
+
 for d in */; do
     cd $d || continue
 	
