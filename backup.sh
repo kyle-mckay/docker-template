@@ -433,7 +433,7 @@ makeCopy(){
     end_ts
     log TRACE "borg create finished exit=${status}, duration=$((end_ts-start_ts))s"
     
-    chown_repo
+    
     cleanupOldBackups
 
     log INFO "Backup complete: ${archiveName}-$TIMESTAMP"
@@ -510,7 +510,7 @@ docker_compose() {
     end_ts
 
     log TRACE "dc.sh $arg exit=${status}, duration=$((end_ts-start_ts))"
-    log TRACE "docker_compose $arg completed"
+    log DEBUG "docker_compose $arg completed"
     log TRACE "=======end docker_compose()======="
 }
 
@@ -529,6 +529,44 @@ flush_log_buffer() {
         done
         LOG_BUFFER=()
     fi
+}
+
+healthcheck() {
+    log TRACE "=======start healthcheck()======="
+    start_ts
+    # ping healthcheck
+    if [[ "$PERFORM_URL_HEALTHCHECK" == "true" ]]; then
+        if [[ "$HEALTHCHECK_DELAY" -gt 0 ]]; then
+            log DEBUG "Waiting for HEALTHCHECK_DELAY $HEALTHCHECK_DELAY seconds before pinging healthcheck URL"
+            sleep "$HEALTHCHECK_DELAY"
+        fi
+
+        
+        log DEBUG "Pinging healthcheck URL: $HEALTHCHECK_URL"
+        if [[ "$LOG_LEVEL" == "TRACE" ]]; then
+            curl -s "$HEALTHCHECK_URL" 2>&1 | tee -a "$LOG_PATH"
+
+            local status=$?
+            end_ts
+            log TRACE "curl -s $HEALTHCHECK_URL exit=${status}, duration=$((end_ts-start_ts))"
+        else
+            curl -s "$HEALTHCHECK_URL" > /dev/null
+
+            local status=$?
+            end_ts
+            log TRACE "curl -s $HEALTHCHECK_URL exit=${status}, duration=$((end_ts-start_ts))"
+        fi
+        if [[ $status -ne 0 ]]; then
+            log ERROR "Healthcheck ping failed with exit code $status"
+        else
+            log INFO "Healthcheck ping successful"
+        fi
+    else
+        log DEBUG "PERFORM_URL_HEALTHCHECK is false; skipping healthcheck ping"
+    fi
+
+    log DEBUG "Healthcheck completed"
+    log TRACE "=======end healthcheck()======="
 }
 
 # Self-update: replace this script with the version from the main branch
@@ -595,10 +633,9 @@ docker_compose "down"
 makeCopy $BORG_ARCHIVE_NAME
 docker_compose "up"
 
-# ping healthcheck
-if [[ "$PERFORM_URL_HEALTHCHECK" == "true" ]]; then
-    curl -s "$HEALTHCHECK_URL" > /dev/null || log WARN "Healthcheck ping failed"
-fi 
+chown_repo
+
+healthcheck
 
 s_end=$(date +%s)
 log DEBUG "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
