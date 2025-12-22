@@ -359,28 +359,39 @@ log() {
 
 borg_init(){
     log TRACE "=======start borg_init()======="
-    # Initialize the repository
+    start_ts
     log INFO "Checking borg repo..."
 
     if [[ "$BACKUP_MODE" == "local" ]]; then
-        # Create parent dir if it doesnt exist
+        # Check if the directory exists AND is a valid borg repo
+        if borg list "$BORG_REPO" >/dev/null 2>&1; then
+            log INFO "Borg repo already exists and is valid"
+        else
+            log TRACE "Borg repo does not exist; initializing..."
+            if [[ -d "$BORG_REPO" && ! -z "$(ls -A "$BORG_REPO")" ]]; then
+                log ERROR "Directory '$BORG_REPO' already exists but is not a valid Borg repo."
+                log ERROR "Please remove directory contents, or use a different path."
+                exit 1
+            else
+                log TRACE "Path exists as directory but is empty; proceeding with init..."
+            fi
 
-        if [[ -d "$BORG_REPO" ]]; then
-            log INFO "Borg repo already exists"
-        elif [[ ! -e "$BORG_REPO" ]]; then
-            log INFO "Creating borg repo"
-            log DEBUG "borg init args: --encryption=${BORG_ENCRYPTION} repo=${BORG_REPO}"
-            borg init --encryption="$BORG_ENCRYPTION" "$BORG_REPO" 2>&1 | tee -a "$LOG_PATH"
-            chown_repo
-            log INFO "Borg repo created"
-        else 
-            log ERROR "Borg repo '$BORG_REPO' exists but not as a directory."
-            exit 1
+            log INFO "Initializing borg repo at $BORG_REPO"
+            log DEBUG "borg init args: --encryption=${BORG_ENCRYPTION}"
+            
+            if borg init --encryption="$BORG_ENCRYPTION" "$BORG_REPO" 2>&1 | tee -a "$LOG_PATH"; then
+                chown_repo
+                log INFO "Borg repo initialized successfully"
+            else
+                log ERROR "Failed to initialize Borg repo"
+                exit 1
+            fi
         fi
     fi
 
-    # Trace repository/encryption details (mask sensitive info)
-    log TRACE "Borg repo present: $( [[ -d "$BORG_REPO" ]] && echo yes || echo no ), encryption=${BORG_ENCRYPTION}, passphrase_set=$( [[ -n "${BORG_REPO_PASSPHRASE:-}" ]] && echo yes || echo no )"
+    end_ts
+
+    log TRACE "borg init --encryption="$BORG_ENCRYPTION" "$BORG_REPO", passphrase_set=$( [[ -n "${BORG_REPO_PASSPHRASE:-}" ]] && echo yes || echo no ), duration=$((end_ts-start_ts))"
     log TRACE "=======end borg_init()======="
 }
 
