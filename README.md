@@ -74,6 +74,7 @@ Copy `.env.template` to `.env` and edit as needed. Below are the variables prese
 - `EXCLUDE_PATTERNS`: Array of shell patterns to exclude from the backup (use this to omit secrets, logs, caches, etc.).
 - `PERFORM_URL_HEALTHCHECK`: (true|false) Whether to ping a healthcheck URL after backup.
 - `HEALTHCHECK_URL`: URL to call when `PERFORM_URL_HEALTHCHECK` is true.
+- `HEALTHCHECK_DELAY`: Number in seconds to delay the execution of the healthcheck. Best used if the backup brings down the healthcheck service to allow time to restart.
 - `CHOWN_AFTER`: (true|false) If true, change ownership of created files to `OWNER_UID`/`OWNER_GID`.
 - `OWNER_UID`: Numeric UID to chown files to when `CHOWN_AFTER` is enabled.
 - `OWNER_GID`: Numeric GID to chown files to when `CHOWN_AFTER` is enabled.
