@@ -60,6 +60,7 @@ Copy `.env.template` to `.env` and edit as needed. Below are the variables prese
 - `BORG_ARCHIVE_NAME`: Base name for archives created by Borg (timestamp appended by script).
 - `LOG_LEVEL`: Logging verbosity (`TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`).
 - `DC_BATCH_CONTROLLER`: Path to the `dc.sh` batch controller used for bringing stacks up/down.
+- `DC_PULL`: (true|false) Whether to perform a `docker compose pull` before bringing items up.
 - `SAVE_LOGS`: (true|false) Whether to save script output to log files.
 - `LOG_DIR`: Directory where logs are written when `SAVE_LOGS` is enabled.
 - `LOG_FILE`: Log filename; defaults to a name based on the archive/timestamp.

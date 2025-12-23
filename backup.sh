@@ -641,7 +641,12 @@ fi
 
 cd "$BACKUP_SOURCE"
 docker_compose "down"
+
 makeCopy $BORG_ARCHIVE_NAME
+
+if [[ "$DC_PULL" == true ]]; then
+    docker_compose pull
+fi
 docker_compose "up"
 
 chown_repo
